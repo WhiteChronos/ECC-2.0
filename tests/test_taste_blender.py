@@ -1,6 +1,7 @@
 """Original Blender workflow boundary tests without importing bpy."""
 
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,7 +43,7 @@ class BlenderPropTests(unittest.TestCase):
         prop.linearize_action(new)
         self.assertEqual(curve.keyframe_points[0].interpolation, "LINEAR")
 
-    def test_output_cannot_overwrite_or_follow_symlinks(self):
+    def test_output_cannot_overwrite_existing_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             target = root / "scene.blend"
@@ -50,8 +51,22 @@ class BlenderPropTests(unittest.TestCase):
             target.touch()
             with self.assertRaises(ValueError):
                 prop.validate_output(target)
+
+    def test_output_cannot_follow_symlinks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            target = root / "scene.blend"
+            target.touch()
             link = root / "link.blend"
-            link.symlink_to(target)
+            try:
+                link.symlink_to(target)
+            except OSError as error:
+                if sys.platform == "win32" and getattr(error, "winerror", None) == 1314:
+                    self.skipTest(
+                        "Real symlink protection requires Windows symlink privilege; "
+                        "not verified in this host (POSIX CI exercises it)"
+                    )
+                raise
             with self.assertRaises(ValueError):
                 prop.validate_output(link)
 
