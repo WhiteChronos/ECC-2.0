@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Keep the documentation audit's success and failure diagnostics printable on ASCII/cp1252 terminals without changing its exit status when Unicode markers cannot be encoded.
+- Preserve the Windows system directory and isolate the user profile in offline selector workflow tests. Exercise the installed Windows console launcher as well as the Python module while retaining the network guard.
+
 ### Changed
 
 - GateGuard first-touch denials ask questions that fit the target: by class (instruction, test, prose, config, code) on its project-relative path, and for code by what the change touches. An edit that changes no public declaration asks for the in-module call sites instead of importers and public API, and the data-schema question is dropped when the change handles no data. Changes the hook cannot read with confidence keep the original four questions word for word.

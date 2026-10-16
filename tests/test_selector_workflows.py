@@ -32,10 +32,10 @@ class Operator:
     env: dict[str, str]
 
     def run(
-        self, args: list[str], answers: str = ""
+        self, args: list[str], answers: str = "", *, executable: Path | None = None
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, *args],
+            [str(executable or sys.executable), *args],
             input=answers,
             cwd=self.project,
             env=self.env,
@@ -69,12 +69,17 @@ def operator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Operat
     guard.joinpath("sitecustomize.py").write_text(NETWORK_GUARD)
     env = {
         "HOME": str(home),
+        "USERPROFILE": str(home),
         "PATH": os.defpath,
         "PYTHONPATH": os.pathsep.join((str(guard), str(SOURCE))),
         "PYTHONUTF8": "1",
         "ANTHROPIC_API_KEY": "offline-test-key",
         "OPENAI_API_KEY": "offline-test-key",
     }
+    # Windows needs SystemRoot to load native modules, including asyncio.
+    # Keep the environment allowlisted; never inherit the operator's credentials.
+    if "SystemRoot" in os.environ:
+        env["SystemRoot"] = os.environ["SystemRoot"]
     monkeypatch.chdir(project)
     for name in tuple(os.environ):
         if name.startswith(("LLM_", "OLLAMA_", "ATLAS_", "ASTRAFLOW_")):
@@ -83,7 +88,7 @@ def operator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Operat
     for name in ("LLM_PROVIDER", "LLM_MODEL"):
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
-    for name in ("HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+    for name in ("HOME", "USERPROFILE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.setenv(name, env[name])
 
     def deny_network(*args: object, **kwargs: object) -> None:
@@ -96,24 +101,41 @@ def operator(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Operat
     assert home.joinpath(".llm.env").read_text() == HOME_CONFIG
 
 
+def test_isolated_home_and_network_guard_apply_in_child(operator: Operator) -> None:
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        operator.run(
+            [
+                "-c",
+                "from pathlib import Path; import socket; "
+                "print(Path.home()); socket.getaddrinfo('example.invalid', 443)",
+            ]
+        )
+    assert Path(failure.value.stdout.strip()) == Path(operator.env["HOME"])
+    assert "Selector workflows must remain offline" in failure.value.stderr
+
+
 @pytest.mark.parametrize("entry", ["module", "console"])
 def test_real_cli_creates_loads_and_replaces_project_selection(
     operator: Operator, entry: str
 ) -> None:
+    executable = None
     if entry == "console":
-        script = Path(sys.executable).parent / "llm-select"
+        script = Path(sys.executable).parent / (
+            "llm-select.exe" if sys.platform == "win32" else "llm-select"
+        )
         if not script.is_file():
             pytest.skip(
                 "Installed llm-select console entry unavailable; module entry still exercised"
             )
-        args = [str(script)]
+        executable = script
+        args = []
     else:
         args = ["-m", "llm"]
 
     assert operator.selection() == ["claude", "claude-sonnet-4-6"]
     origin = operator.run(["-c", "import llm; print(llm.__file__)"])
     assert Path(origin.stdout.strip()).resolve() == SOURCE / "llm" / "__init__.py"
-    first = operator.run(args, "3\n2\n")
+    first = operator.run(args, "3\n2\n", executable=executable)
     assert "Available Providers:" in first.stdout
     assert "Local Ollama models" in first.stdout
     assert "Available Models:" in first.stdout
@@ -126,7 +148,7 @@ def test_real_cli_creates_loads_and_replaces_project_selection(
     assert config.read_text() == "LLM_PROVIDER=ollama\nLLM_MODEL=mistral\n"
     assert operator.selection() == ["ollama", "mistral"]
 
-    second = operator.run(args, "2\n2\n")
+    second = operator.run(args, "2\n2\n", executable=executable)
     assert "GPT-4o-mini - Fast & affordable" in second.stdout
     assert second.stderr == ""
     assert config.read_text() == "LLM_PROVIDER=openai\nLLM_MODEL=gpt-4o-mini\n"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +11,32 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills" / "docs-governance" / "scripts" / "audit-docs.py"
+
+
+def create_symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        if sys.platform == "win32" and getattr(error, "winerror", None) == 1314:
+            pytest.skip(
+                "Real symlink protection requires Windows symlink privilege; "
+                "not verified in this host (POSIX CI exercises it)"
+            )
+        raise
+
+
+def test_symlink_fixture_does_not_mask_unrelated_os_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    error = OSError("unrelated filesystem failure")
+
+    def fail_symlink(*args: object, **kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(Path, "symlink_to", fail_symlink)
+    with pytest.raises(OSError) as failure:
+        create_symlink_or_skip(tmp_path / "link", tmp_path / "target")
+    assert failure.value is error
 
 
 @pytest.fixture
@@ -87,7 +115,7 @@ def test_artifact_scope_does_not_read_markdown_symlinked_outside_project(
     outside = project.parent / "outside-secret.md"
     outside.write_text("[secret](missing-token-value.md)\n", encoding="utf-8")
     try:
-        (project / "outside.md").symlink_to(outside)
+        create_symlink_or_skip(project / "outside.md", outside)
         result = run_audit(project, "artifacts")
         assert result.returncode == 1
         assert "Markdown source resolves outside the project root" in result.stdout
@@ -97,7 +125,7 @@ def test_artifact_scope_does_not_read_markdown_symlinked_outside_project(
 
 
 def test_artifact_scope_reports_a_broken_markdown_symlink(project: Path) -> None:
-    (project / "broken.md").symlink_to(project / "missing.md")
+    create_symlink_or_skip(project / "broken.md", project / "missing.md")
     result = run_audit(project, "artifacts")
     assert result.returncode == 1
     assert "Markdown source is not a regular file" in result.stdout
@@ -503,7 +531,7 @@ def test_adr_scope_does_not_read_an_adr_symlinked_outside_project(
         (adr_dir / "README.md").write_text(
             "[outside](0001-outside.md)\n", encoding="utf-8"
         )
-        (adr_dir / "0001-outside.md").symlink_to(outside)
+        create_symlink_or_skip(adr_dir / "0001-outside.md", outside)
         result = run_audit(project, "adr")
         assert result.returncode == 1
         assert "ADR source resolves outside the project root" in result.stdout
@@ -653,7 +681,9 @@ def test_spine_scope_detects_windows_path_deletion_zone_file(project: Path) -> N
 def test_spine_scope_ignores_unsafe_deletion_zone_values(
     project: Path, value: str
 ) -> None:
-    candidate = project / value
+    # URI names are invalid (or alternate data streams) on Windows. Keep the
+    # lookalike-file fixture on POSIX and exercise URI rejection directly below.
+    candidate = project / ("unrelated.py" if sys.platform == "win32" else value)
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_text("# unrelated\n", encoding="utf-8")
     (project / "PROJECT_STATUS.md").write_text(
@@ -661,6 +691,17 @@ def test_spine_scope_ignores_unsafe_deletion_zone_values(
     )
     result = run_audit(project, "spine")
     assert result.returncode == 0, result.stdout
+
+
+@pytest.mark.parametrize(
+    "value", ["ftp://example.com/legacy.py", "mailto:legacy@example.com", "urn:legacy:parser"]
+)
+def test_deletion_path_parser_rejects_uri_without_filesystem_access(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    audit = runpy.run_path(str(SCRIPT))
+    assert audit["plausible_deletion_path"](value) is False
 
 
 def test_spine_scope_handles_missing_git_without_traceback(project: Path) -> None:
@@ -677,6 +718,24 @@ def test_spine_scope_handles_missing_git_without_traceback(project: Path) -> Non
     assert result.returncode == 0, result.stdout
     assert "Git history is unavailable" in result.stdout
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.parametrize("broken_link,expected_code", [(False, 0), (True, 1)])
+def test_audit_preserves_result_with_ascii_output(
+    project: Path, broken_link: bool, expected_code: int
+) -> None:
+    if broken_link:
+        (project / "guide.md").write_text("[missing](missing.md)\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(project), "--scope", "artifacts"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env={**os.environ, "PYTHONIOENCODING": "ascii:strict", "PYTHONUTF8": "0"},
+    )
+    assert result.returncode == expected_code, result.stderr
+    assert "Deterministic audit" in result.stdout
+    assert "UnicodeEncodeError" not in result.stderr
 
 
 def test_spine_scope_warns_when_root_has_no_git_head(project: Path) -> None:
@@ -747,7 +806,7 @@ def test_role_map_does_not_follow_a_mapping_symlinked_outside_project(
     outside = project.parent / "outside-map.json"
     outside.write_text('{"context": "private-context.md"}\n', encoding="utf-8")
     try:
-        (governance / "docs-map.json").symlink_to(outside)
+        create_symlink_or_skip(governance / "docs-map.json", outside)
         result = run_audit(project, "context")
         assert result.returncode == 1
         assert "repository-contained regular file" in result.stdout
@@ -760,7 +819,7 @@ def test_default_role_does_not_follow_a_symlink_outside_project(project: Path) -
     outside = project.parent / "outside-context.md"
     outside.write_text("private context\n", encoding="utf-8")
     try:
-        (project / "CONTEXT.md").symlink_to(outside)
+        create_symlink_or_skip(project / "CONTEXT.md", outside)
         result = run_audit(project, "context")
         assert result.returncode == 1
         assert "Documentation role resolves outside the project root" in result.stdout
