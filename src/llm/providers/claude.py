@@ -14,6 +14,7 @@ from llm.core.interface import (
     RateLimitError,
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, Role, ToolCall
+from llm.providers.local_policy import require_provider_allowed
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 _OPUS_ADAPTIVE_ONLY_PREFIXES = ("claude-opus-4-7", "claude-opus-4-8")
@@ -32,6 +33,7 @@ class ClaudeProvider(LLMProvider):
         base_url: str | None = None,
         default_model: str | None = None,
     ) -> None:
+        require_provider_allowed(self.provider_type.value)
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"), base_url=base_url)
         self.default_model = default_model or _DEFAULT_MODEL
         self._models = [

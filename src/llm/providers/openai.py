@@ -22,6 +22,7 @@ from llm.core.types import (
     ToolCall,
 )
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.local_policy import require_provider_allowed
 from llm.providers.openai_compat import to_openai_message_param
 from llm.providers.reasoning import prefilled_reasoning_from_env, strip_reasoning
 
@@ -37,6 +38,7 @@ class OpenAIProvider(LLMProvider):
         prefilled_reasoning: bool | None = None,
         leading_reasoning: bool | None = None,
     ) -> None:
+        require_provider_allowed(self.provider_type.value)
         # Enable only for a deployment that declares balanced leading reasoning.
         # Generic responses can contain literal XML and stay intact by default.
         self.leading_reasoning = (

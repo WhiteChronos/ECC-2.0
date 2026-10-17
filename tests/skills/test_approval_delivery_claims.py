@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import os
 import sqlite3
 import tempfile
 import threading
@@ -157,7 +158,9 @@ class DeliveryClaimsTest(unittest.TestCase):
         self.assertFalse(missing.exists())
 
     def test_database_filename_is_not_interpreted_as_uri_options(self):
-        path = Path(self.directory.name) / 'ledger ?#%.sqlite'
+        # Windows forbids '?' in filenames; retain URI metacharacters valid on each OS.
+        filename = 'ledger #%.sqlite' if os.name == 'nt' else 'ledger ?#%.sqlite'
+        path = Path(self.directory.name) / filename
         path.touch()
         db = claims.connect(path)
         try:

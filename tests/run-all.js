@@ -81,6 +81,11 @@ function parseCounts(combined) {
     }
     return { passed, failed, definite: true };
   }
+  const specPassed = [...combined.matchAll(/^ℹ pass (\d+)\s*$/gm)].at(-1);
+  const specFailed = [...combined.matchAll(/^ℹ fail (\d+)\s*$/gm)].at(-1);
+  if (specPassed && specFailed) {
+    return { passed: Number(specPassed[1]), failed: Number(specFailed[1]), definite: true };
+  }
   const lines = combined.split(/\r?\n/);
   let tapPassed = 0;
   let tapFailed = 0;

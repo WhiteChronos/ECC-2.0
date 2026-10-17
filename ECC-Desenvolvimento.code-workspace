@@ -1,0 +1,15 @@
+{
+  "folders": [{"name": "ECC-2.0 — Independente", "path": "."}],
+  "settings": {"search.exclude": {"**/node_modules": true, "**/.local-runtime": true}},
+  "extensions": {"recommendations": ["openai.chatgpt"]},
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {"label": "ECC: chat local", "type": "process", "command": "C:/Program Files/nodejs/node.exe", "args": ["scripts/local-runtime.cjs"], "options": {"cwd": "${workspaceFolder}"}, "problemMatcher": []},
+      {"label": "ECC: validar inferência local", "type": "process", "command": "C:/Program Files/nodejs/node.exe", "args": ["scripts/local-runtime.cjs", "--smoke"], "options": {"cwd": "${workspaceFolder}"}, "problemMatcher": []}
+    ]
+  },
+  "launch": {"version": "0.2.0", "configurations": [
+    {"name": "ECC: depurar iniciador local", "type": "node", "request": "launch", "program": "${workspaceFolder}/scripts/local-runtime.cjs", "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"]}
+  ]}
+}

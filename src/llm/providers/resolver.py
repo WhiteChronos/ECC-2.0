@@ -10,6 +10,7 @@ from llm.core.types import ProviderType
 from llm.providers.astraflow import AstraflowCNProvider, AstraflowProvider
 from llm.providers.atlas import AtlasProvider
 from llm.providers.claude import ClaudeProvider
+from llm.providers.local_policy import local_only_enabled, require_provider_allowed
 from llm.providers.model_config import read_model_env
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openai import OpenAIProvider
@@ -61,6 +62,11 @@ def _read_saved_llm_config(env_path: str | Path = LLM_ENV_FILE) -> dict[str, str
 def _resolve_provider_config(
     provider_type: ProviderType | str | None,
 ) -> tuple[ProviderType | str, str | None]:
+    if local_only_enabled():
+        selected = provider_type or os.environ.get("LLM_PROVIDER") or "ollama"
+        selected = selected.value if isinstance(selected, ProviderType) else _strip_env_value(selected).lower()
+        require_provider_allowed(selected)
+        return selected, None
     if provider_type is not None:
         return provider_type, None
 

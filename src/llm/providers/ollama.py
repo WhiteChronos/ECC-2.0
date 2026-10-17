@@ -25,6 +25,7 @@ from llm.core.types import (
     Role,
     ToolCall,
 )
+from llm.providers.local_policy import local_base_url, local_only_enabled, open_local
 from llm.providers.model_config import read_model_env
 from llm.providers.reasoning import prefilled_reasoning_from_env, strip_reasoning
 
@@ -77,6 +78,9 @@ class OllamaProvider(LLMProvider):
             else prefilled_reasoning_from_env("OLLAMA_PREFILLED_REASONING")
         )
         self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.local_only = local_only_enabled()
+        if self.local_only:
+            self.base_url = local_base_url(self.base_url)
         self.default_model = default_model or read_model_env("OLLAMA_MODEL") or "llama3.2"
         self._models = [
             ModelInfo(
@@ -106,6 +110,26 @@ class OllamaProvider(LLMProvider):
         ]
         self._tool_support: dict[str, bool] = {}
 
+    def _open(self, request: urllib.request.Request, timeout: float):
+        if self.local_only or local_only_enabled():
+            return open_local(request, timeout)
+        return urllib.request.urlopen(request, timeout=timeout)
+
+    def _verify_local_model(self, model: str) -> None:
+        if ":cloud" in model.lower() or model.lower().endswith("-cloud"):
+            raise ValueError("Modo local: modelo cloud bloqueado.")
+        req = urllib.request.Request(
+            f"{self.base_url}/api/show", data=json.dumps({"model": model}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with self._open(req, timeout=10) as response:
+            raw = response.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("Modo local: metadados acima do limite.")
+        info = json.loads(raw)
+        if info.get("remote_host") or info.get("remote_model") or not info.get("model_info"):
+            raise ValueError("Modo local: pesos locais nao comprovados.")
+
     def model_supports_tools(self, model: str) -> bool:
         """Whether ``model`` declares tool support.
 
@@ -126,8 +150,11 @@ class OllamaProvider(LLMProvider):
                 data=json.dumps({"model": model}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
-                capabilities = json.loads(response.read().decode("utf-8")).get("capabilities") or []
+            with self._open(req, timeout=10) as response:
+                raw = response.read(8 * 1024 * 1024 + 1)
+                if len(raw) > 8 * 1024 * 1024:
+                    raise ValueError("Capacidades acima do limite.")
+                capabilities = json.loads(raw.decode("utf-8")).get("capabilities") or []
         except Exception as e:
             logger.warning("Could not read capabilities for Ollama model '%s': %s", model, type(e).__name__)
             return False
@@ -142,12 +169,23 @@ class OllamaProvider(LLMProvider):
         try:
             url = f"{self.base_url}/api/chat"
             model = input.model or self.default_model
+            if self.local_only or local_only_enabled():
+                self._verify_local_model(model)
 
             payload: dict[str, Any] = {
                 "model": model,
                 "messages": _messages_payload(input.messages),
                 "stream": False,
             }
+            if "think" in input.metadata:
+                if not isinstance(input.metadata["think"], bool):
+                    raise ValueError("think deve ser booleano.")
+                payload["think"] = input.metadata["think"]
+            if "format" in input.metadata:
+                schema = input.metadata["format"]
+                if not isinstance(schema, dict) or len(json.dumps(schema)) > 16384:
+                    raise ValueError("Schema JSON invalido ou acima do limite.")
+                payload["format"] = schema
             options: dict[str, Any] = {}
             if input.temperature != 1.0:
                 options["temperature"] = input.temperature
@@ -164,8 +202,12 @@ class OllamaProvider(LLMProvider):
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
 
-            with urllib.request.urlopen(req, timeout=60) as response:
-                result = json.loads(response.read().decode("utf-8"))
+            timeout = 180 if self.local_only or local_only_enabled() else 60
+            with self._open(req, timeout=timeout) as response:
+                raw = response.read(8 * 1024 * 1024 + 1)
+                if len(raw) > 8 * 1024 * 1024:
+                    raise ValueError("Resposta acima do limite.")
+                result = json.loads(raw.decode("utf-8"))
 
             content = strip_reasoning(
                 result.get("message", {}).get("content", ""),
@@ -193,6 +235,11 @@ class OllamaProvider(LLMProvider):
                 stop_reason=result.get("done_reason"),
             )
         except Exception as e:
+            if self.local_only or local_only_enabled():
+                raise LLMError(
+                    f"Modo local: requisicao falhou ({type(e).__name__}); sem fallback externo.",
+                    provider=ProviderType.OLLAMA, code="local_request_failed",
+                ) from e
             msg = str(e)
             lowered = msg.lower()
             if "401" in msg or "unauthorized" in lowered or "forbidden" in lowered:

@@ -16,6 +16,7 @@ from llm.core.interface import (
 )
 from llm.core.types import LLMInput, LLMOutput, ModelInfo, ProviderType, ToolCall
 from llm.providers.constants import EMPTY_FILTERED_RESPONSE_ERROR
+from llm.providers.local_policy import require_provider_allowed
 from llm.providers.model_config import read_model_env
 from llm.providers.openai_compat import to_openai_message_param
 
@@ -62,6 +63,7 @@ class AtlasProvider(LLMProvider):
         base_url: str | None = None,
         default_model: str | None = None,
     ) -> None:
+        require_provider_allowed(self.provider_type.value)
         self.api_key = (
             api_key
             or os.environ.get(self.api_key_env)
