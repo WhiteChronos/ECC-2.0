@@ -135,7 +135,7 @@ Use the [guided setup](#install-ecc) or [native plugin commands](#claude-code-de
 
 <p align="center"><a href="#install-ecc">Jump to install ↓</a></p>
 
-# ECC
+## ECC upstream documentation
 
 Your agent can write code, but ECC gives it a coordinated engineering system and toolbox: it plans before it builds, verifies changes with tests, reviews its own work from a fresh context, remembers what matters, and turns repeated wins into reusable skills and workflows.
 

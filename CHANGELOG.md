@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Fixed
+### ECC-2.0 validation fixes
 
 - ECC-2.0: keep documentation audit copies consistent across canonical, Codex and Pi distributions, and refresh the registry digest without changing curated trigger phrases.
 - ECC-2.0: isolate statusline project fixtures from an ambient ancestor Git repository.
