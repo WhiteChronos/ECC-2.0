@@ -1,3 +1,11 @@
+# ECC-2.0
+
+Independent WhiteChronos project derived from [ECC](https://github.com/affaan-m/ECC), retaining the upstream MIT license, authorship and history. ECC-2.0 runs independently; REA is not a runtime dependency.
+
+Development status: Windows compatibility fixes are under validation. The Python suite passed with 536 tests and 10 explicit skips (85.12% coverage). A prior JavaScript run passed 7,366 tests and failed 133; follow-up fixes and validation are in progress. Restricted-host security checks are not certified by these results. No claim of complete readiness or performance improvement is made yet.
+
+GitHub: [WhiteChronos/ECC-2.0](https://github.com/WhiteChronos/ECC-2.0). The upstream documentation follows; upstream version numbers and feature claims refer to their original distribution unless independently verified here.
+
 <p align="center">
   <img src="assets/hero.png" alt="ECC - the agent harness operating system" width="100%" />
 </p>

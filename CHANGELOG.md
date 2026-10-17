@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- ECC-2.0: keep documentation audit copies consistent across canonical, Codex and Pi distributions, and refresh the registry digest without changing curated trigger phrases.
+- ECC-2.0: isolate statusline project fixtures from an ambient ancestor Git repository.
+- ECC-2.0: validate the profile/target matrix from one freshly loaded canonical registry per call, retaining deterministic digests, input validation and the existing CI timeout.
+
 - Keep the documentation audit's success and failure diagnostics printable on ASCII/cp1252 terminals without changing its exit status when Unicode markers cannot be encoded.
 - Preserve the Windows system directory and isolate the user profile in offline selector workflow tests. Exercise the installed Windows console launcher as well as the Python module while retaining the network guard.
 

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
-const { compileContextProfile, loadContextProfile } = require('../../scripts/lib/context-profiles');
+const { compileContextProfile, compileContextProfileMatrix, loadContextProfile } = require('../../scripts/lib/context-profiles');
 const { KERNEL, update, withFixture, write } = require('./helpers/context-fixture');
 
 test('Lean selects three discoverable skills and leaves remaining workflows routed', () => withFixture(root => {
@@ -138,4 +138,54 @@ test('every target projects the same explicit profile selection with unobserved 
     assert.deepEqual(plan.selectedIds, KERNEL.map(id => `skill:${id}`));
     assert.ok(plan.entries.every(entry => entry.projection.nativeSupport === 'unobserved'));
   }
+}));
+
+test('matrix compilation matches individual plan digests for every requested projection', () => withFixture(root => {
+  const profileIds = ['lean@1', 'full@1'];
+  const targets = ['codex', 'claude', 'pi'];
+  const { registry, plans } = compileContextProfileMatrix({ repoRoot: root, profileIds, targets });
+  assert.equal(plans.length, profileIds.length * targets.length);
+  for (const plan of plans) {
+    assert.equal(plan.registryDigest, registry.registryDigest);
+    assert.deepEqual(plan, compileContextProfile({ repoRoot: root, profileId: plan.profileId, target: plan.target }));
+  }
+}));
+
+test('matrix compilation obtains exactly one canonical registry per invocation', () => withFixture(root => {
+  const registryModule = require('../../scripts/lib/context-pack-registry');
+  const modulePath = require.resolve('../../scripts/lib/context-profiles');
+  const previousModule = require.cache[modulePath];
+  const originalLoader = registryModule.loadContextRegistry;
+  let loads = 0;
+  try {
+    registryModule.loadContextRegistry = options => { loads++; return originalLoader(options); };
+    delete require.cache[modulePath];
+    const isolated = require(modulePath);
+    isolated.compileContextProfileMatrix({ repoRoot: root });
+    assert.equal(loads, 1);
+  } finally {
+    registryModule.loadContextRegistry = originalLoader;
+    require.cache[modulePath] = previousModule;
+  }
+}));
+
+test('matrix calls refresh canonical sources and reject caller-built registry snapshots', () => withFixture(root => {
+  const before = compileContextProfileMatrix({ repoRoot: root, targets: ['codex'] });
+  fs.appendFileSync(path.join(root, 'skills/ecc-guide/SKILL.md'), '\nNew canonical body.\n');
+  const after = compileContextProfileMatrix({ repoRoot: root, targets: ['codex'] });
+  assert.notEqual(before.registry.registryDigest, after.registry.registryDigest);
+  assert.notEqual(before.plans[0].planDigest, after.plans[0].planDigest);
+  assert.throws(() => compileContextProfileMatrix({ repoRoot: root, registry: before.registry }), /unknown|registry/i);
+  assert.equal(require('../../scripts/lib/context-profiles').compileContextPlan, undefined);
+}));
+
+test('matrix compilation validates shape, profiles, targets, selectors and selection mode', () => withFixture(root => {
+  assert.equal(typeof compileContextProfileMatrix, 'function');
+  for (const options of [
+    { profileIds: [] }, { profileIds: 'lean@1' }, { profileIds: ['../outside'] },
+    { profileIds: ['lean', 'lean@1'] }, { targets: [] }, { targets: 'codex' },
+    { targets: ['unknown'] }, { targets: [undefined] }, { targets: ['codex', 'codex'] }, { selectionMode: 'maybe' },
+    { include: ['skill:missing'] }, { exclude: ['skill:ecc-guide'] },
+  ]) assert.throws(() => compileContextProfileMatrix({ repoRoot: root, ...options }));
+  assert.throws(() => compileContextProfileMatrix(null));
 }));

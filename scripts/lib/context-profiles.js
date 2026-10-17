@@ -103,6 +103,48 @@ function compileContextProfileWithRegistry({ repoRoot = DEFAULT_REPO_ROOT, ...op
   return { registry, plan: compileContextPlan(registry, { repoRoot, ...options }) };
 }
 
+function validateMatrixTargets(targets, selectionMode) {
+  if (targets === undefined) return;
+  if (!Array.isArray(targets) || targets.length === 0) {
+    throw new Error('Context matrix targets must be a non-empty array');
+  }
+  if (new Set(targets).size !== targets.length) throw new Error('Duplicate context matrix target');
+  for (const target of targets) {
+    if (typeof target !== 'string') throw new Error('Context matrix targets must contain target names');
+    validatePlanOptions({ selectionMode, target });
+  }
+}
+
+// Batch projections share only the freshly verified snapshot from this call.
+// No registry argument or cross-call cache may bypass the canonical loader.
+function compileContextProfileMatrix(options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('Context matrix options must be an object');
+  }
+  const allowed = new Set(['repoRoot', 'profileIds', 'targets', 'selectionMode', 'include', 'exclude']);
+  for (const key of Object.keys(options)) {
+    if (!allowed.has(key)) throw new Error(`Unknown context matrix option: ${key}`);
+  }
+  const {
+    repoRoot = DEFAULT_REPO_ROOT, profileIds = ['lean@1', 'full@1'], targets,
+    selectionMode = 'manual', include = [], exclude = [],
+  } = options;
+  if (!Array.isArray(profileIds) || profileIds.length === 0) {
+    throw new Error('Context matrix profileIds must be a non-empty array');
+  }
+  const profiles = profileIds.map(id => PROFILE_ALIASES[id] || id);
+  if (new Set(profiles).size !== profiles.length) throw new Error('Duplicate context matrix profile ID');
+  for (const id of profiles) {
+    if (!['lean@1', 'full@1'].includes(id)) throw new Error(`Unknown context profile: ${id}`);
+  }
+  validatePlanOptions({ selectionMode });
+  validateMatrixTargets(targets, selectionMode);
+  const registry = loadContextRegistry({ repoRoot });
+  const plans = profiles.flatMap(profileId => (targets || registry.targets).map(target =>
+    compileContextPlan(registry, { repoRoot, profileId, target, selectionMode, include, exclude })));
+  return { registry, plans };
+}
+
 function compileContextPlan(registry, {
   repoRoot = DEFAULT_REPO_ROOT, profileId = 'lean@1', selectionMode = 'manual',
   target = 'codex', include = [], exclude = [],
@@ -145,4 +187,4 @@ function compileContextPlan(registry, {
   return plan;
 }
 
-module.exports = { compileContextProfile, compileContextProfileWithRegistry, explainContextEntry, loadContextProfile };
+module.exports = { compileContextProfile, compileContextProfileMatrix, compileContextProfileWithRegistry, explainContextEntry, loadContextProfile };

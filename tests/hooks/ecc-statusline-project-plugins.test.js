@@ -8,6 +8,11 @@ const { readInstalledPlugins } = require('../../scripts/lib/statusline-render');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-plugin-project-'));
 const config = path.join(root, 'profile');const a = path.join(root, 'A');const b = path.join(root, 'B');
 for (const dir of [config, a, b]) fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+// Each scoped fixture is its own repository, even when the temporary directory
+// sits inside a real ancestor checkout on the host. Do not change Git trust.
+for (const dir of [root, a, b]) {
+  require('node:child_process').execFileSync('git', ['init', '-q', dir]);
+}
 fs.mkdirSync(path.join(config, 'plugins'));
 const records = { 'a-only@fixture': [{ scope: 'local', projectPath: a, version: '9.9.9' }],
   'shared@fixture': [{ scope: 'project', projectPath: a, version: '1.1.0' }, { scope: 'project', projectPath: b, version: '2.2.0' }, { scope: 'user', version: '0.0.1' }],
@@ -21,6 +26,12 @@ function cli(project) {
   });assert.equal(result.status, 0, result.stderr);return result.stdout;
 }
 const tests = [
+  ['nested project repositories ignore ancestor-scoped plugin installations', () => {
+    write({ ...records, 'ancestor-only@fixture': [{ scope: 'project', projectPath: root, version: '8.8.8' }] });
+    const plugins = readInstalledPlugins(config, a);
+    assert.ok(!plugins.some(plugin => plugin.name === 'ancestor-only'));
+    assert.equal(plugins.find(plugin => plugin.name === 'a-only').version, '9.9.9');
+  }],
   ['actual B statusline excludes A-only plugins and selects B shared version independent of record order', () => {
     write(records);const first = cli(b);assert.doesNotMatch(first, /a-only|1\.1\.0/);assert.match(first, /shared.*2\.2\.0/);
     write({ ...records, 'shared@fixture': [...records['shared@fixture']].reverse() });assert.equal(cli(b), first);

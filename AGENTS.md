@@ -1,5 +1,9 @@
 # ECC — Agent Instructions
 
+## ECC-2.0 project boundary
+
+This checkout develops the independent WhiteChronos/ECC-2.0 project. REA may be used as an external analysis tool, but is not an ECC-2.0 runtime dependency. Preserve upstream licenses and attribution. Keep unavailable host/security checks explicit; do not remove controls or call skipped tests verified. Publish this product only to its own repository, never into the REA repository.
+
 This is a **production-ready AI coding plugin** providing 71 specialized agents, 311 skills, 97 commands, and automated hook workflows for software development.
 
 **Version:** 2.2.3
