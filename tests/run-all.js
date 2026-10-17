@@ -81,8 +81,8 @@ function parseCounts(combined) {
     }
     return { passed, failed, definite: true };
   }
-  const specPassed = [...combined.matchAll(/^ℹ pass (\d+)\s*$/gm)].at(-1);
-  const specFailed = [...combined.matchAll(/^ℹ fail (\d+)\s*$/gm)].at(-1);
+  const specPassed = [...combined.matchAll(/^\u2139 pass (\d+)\s*$/gm)].at(-1);
+  const specFailed = [...combined.matchAll(/^\u2139 fail (\d+)\s*$/gm)].at(-1);
   if (specPassed && specFailed) {
     return { passed: Number(specPassed[1]), failed: Number(specFailed[1]), definite: true };
   }

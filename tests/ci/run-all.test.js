@@ -50,12 +50,12 @@ function run(result, filename = 'sample.test.js', actions = true) {
 
 const tests = [
   ['native Node spec reporter retains test counts', () => {
-    const result = run({status: 0, stdout: 'ℹ tests 3\nℹ pass 3\nℹ fail 0\n'});
+    const result = run({status: 0, stdout: '\u2139 tests 3\n\u2139 pass 3\n\u2139 fail 0\n'});
     assert.strictEqual(result.status, 0);
     assert.ok(result.logs.some(line => /Passed: 3, Failed: 0/.test(line)));
   }],
   ['native Node spec failures cannot be hidden by successful exit', () => {
-    const result = run({status: 0, stdout: 'ℹ tests 3\nℹ pass 2\nℹ fail 1\n'});
+    const result = run({status: 0, stdout: '\u2139 tests 3\n\u2139 pass 2\n\u2139 fail 1\n'});
     assert.strictEqual(result.status, 1);
   }],
   ['named suite summaries retain their actual totals', () => {

@@ -13,7 +13,7 @@ O resultado mais recente fica em `.local-runtime/latest-acceptance.json`, acompa
 ## Pré-requisitos e portabilidade
 
 - Node >=24.15 e Python >=3.11 com as dependências deste projeto (`python -m pip install -e .` em ambiente virtual próprio).
-- Runtime oficial Ollama 0.40.5, obtido de https://github.com/ollama/ollama/releases/tag/v0.40.5. O ZIP Windows desta preparação tem SHA-256 `5134ce7e3bc8e94d0494721c799ec293b429450d0c52461b0ee3647dd3bb4bb7`.
+- Runtime oficial Ollama 0.40.5, obtido da [distribuição oficial](https://github.com/ollama/ollama/releases/tag/v0.40.5). O ZIP Windows desta preparação tem SHA-256 `5134ce7e3bc8e94d0494721c799ec293b429450d0c52461b0ee3647dd3bb4bb7`.
 - Modelo `qwen3:0.6b` baixado para o armazenamento local. É um modelo pequeno para aceitação inicial; qualidade e capacidade não equivalem às de modelos maiores.
 
 Neste layout, o iniciador procura `toolchains/ollama-0.40.5` sob a pasta Codex e Python na `.venv` do projeto ou no ambiente `ecc-validation-py` irmão. Para outro computador, definir `ECC_OLLAMA_DIR` apontando para uma pasta com `runtime/ollama.exe` e `models/`, e `ECC_PYTHON` para o executável do ambiente virtual. Ajustar o caminho do Node nos arquivos .cmd se necessário.
@@ -44,9 +44,9 @@ Esta sessão Codex usa uma identidade diferente do usuário normal. O Ollama ini
 
 Preservar o LICENSE MIT e a atribuição upstream do ECC. O runtime Ollama e o modelo têm licenças próprias, mantidas na distribuição/armazenamento; o Qwen3:0.6b publicado usa Apache-2.0. Componentes novos desta entrega são extensões do projeto independente, sem transferência de autoria do upstream.
 
-- Windows e distribuição oficial: https://docs.ollama.com/windows
-- Desativação de recursos cloud: https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features
-- Modelo e licença: https://ollama.com/library/qwen3:0.6b
+- [Windows e distribuição oficial](https://docs.ollama.com/windows)
+- [Desativação de recursos cloud](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
+- [Modelo e licença](https://ollama.com/library/qwen3:0.6b)
 
 ## Desenvolvimento
 
