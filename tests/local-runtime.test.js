@@ -4,6 +4,24 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+test('successful download cannot approve unknown process termination', () => {
+  const {preparationExitCode} = require('../scripts/local-runtime.cjs');
+  assert.equal(preparationExitCode(0, true), 0);
+  assert.notEqual(preparationExitCode(0, false), 0);
+  assert.notEqual(preparationExitCode(0, undefined), 0);
+  assert.equal(preparationExitCode(3, true), 3);
+});
+
+test('model selection and preparation accept only explicit local allowlist', () => {
+  const runtime = require('../scripts/local-runtime.cjs');
+  assert.deepEqual(runtime.parseAction(['--doctor', '--model', 'qwen3:4b']), {args:['--doctor'], model:'qwen3:4b', prepare:false});
+  assert.deepEqual(runtime.parseAction(['--prepare-model', 'qwen3:4b']), {args:[], model:'qwen3:4b', prepare:true});
+  assert.equal(runtime.parseAction(['--doctor']).model, 'qwen3:0.6b');
+  for (const args of [['--model','remote:cloud'], ['--prepare-model','remote:cloud'], ['--doctor','--model','qwen3:4b','--model','qwen3:0.6b'], ['--prepare-model','qwen3:4b','extra']]) {
+    assert.throws(() => runtime.parseAction(args));
+  }
+});
+
 test('batch JSON is an explicit local action with bounded input', () => {
   const runtime = require('../scripts/local-runtime.cjs');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-batch-input-'));

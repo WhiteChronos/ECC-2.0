@@ -15,7 +15,24 @@ function runtimeEnvironment(parent, directory, port) {
     PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
 }
 
-function validateArgs(args) {
+const LOCAL_MODELS = new Set(['qwen3:0.6b', 'qwen3:4b']);
+
+function parseAction(input) {
+  if (input[0] === '--prepare-model') {
+    if (input.length !== 2 || !LOCAL_MODELS.has(input[1])) throw new Error('Modelo local nao permitido.');
+    return {args:[], model:input[1], prepare:true};
+  }
+  const index = input.indexOf('--model');
+  const model = index < 0 ? 'qwen3:0.6b' : input[index + 1];
+  if (!LOCAL_MODELS.has(model) || (index >= 0 && index !== input.length - 2)) throw new Error('Modelo local nao permitido.');
+  const args = index < 0 ? [...input] : input.slice(0, index);
+  validateBaseArgs(args);
+  return {args, model, prepare:false};
+}
+
+function validateArgs(args) { parseAction(args); return args; }
+
+function validateBaseArgs(args) {
   if (args.length === 2 && args[0] === '--batch-json') {
     const stat = fs.lstatSync(args[1]);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw new Error('Arquivo de lote invalido.');
@@ -45,7 +62,8 @@ async function availablePort() {
 }
 
 async function runRuntime(args, context) {
-  validateArgs(args);
+  const action = parseAction(args);
+  args = action.args;
   const { root } = context;
   const codexRoot = path.resolve(root, '../..');
   const directory = context.directory || process.env.ECC_OLLAMA_DIR || path.join(codexRoot, 'toolchains', 'ollama-0.40.5');
@@ -82,13 +100,19 @@ async function runRuntime(args, context) {
     }
     if (!ready) throw new Error('Prazo excedido ao iniciar Ollama.');
     const smoke = args[0] === '--smoke';
-    const structured = smoke || args[0] === '--batch-json';
-    client = spawn(python, ['-m', 'llm.cli.local', '--url', `http://127.0.0.1:${port}`, '--model', 'qwen3:0.6b', ...args],
+    const structured = !action.prepare && (smoke || args[0] === '--batch-json');
+    const command = action.prepare ? executable : python;
+    const clientArgs = action.prepare ? ['pull', action.model] : ['-m', 'llm.cli.local', '--url', `http://127.0.0.1:${port}`, '--model', action.model, ...args];
+    client = spawn(command, clientArgs,
       { cwd: root, env, shell: false, windowsHide: true, stdio: structured ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
     clientClosed = new Promise(resolve => client.once('close', resolve));
     let output = '';
     if (structured) client.stdout.on('data', chunk => { output += chunk.toString('utf8'); if (Buffer.byteLength(output) > 16 * 1024 * 1024) client.kill(); });
-    const code = await new Promise((resolve, reject) => { client.once('error', reject); client.once('close', resolve); });
+    const deadline = setTimeout(stop, action.prepare ? 1800000 : 3340000);
+    let code;
+    try {
+      code = await new Promise((resolve, reject) => { client.once('error', reject); client.once('close', resolve); });
+    } finally { clearTimeout(deadline); }
     if (structured) {
       const result = JSON.parse(output);
       context.result = { ...result, runtimeOwnedByLauncher: true, cloudDisabled: true, allEccSurfacesVerified: false };
@@ -110,6 +134,10 @@ function writeAtomic(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`;
   fs.writeFileSync(temporary, JSON.stringify(value, null, 2));
   fs.renameSync(temporary, file);
+}
+
+function preparationExitCode(code, directProcessesTerminated) {
+  return code === 0 && directProcessesTerminated === true ? 0 : (code || 1);
 }
 
 async function main(args = process.argv.slice(2), options = {}) {
@@ -145,10 +173,10 @@ async function main(args = process.argv.slice(2), options = {}) {
     if (!batch) console.log('Resultado salvo em .local-runtime/latest-acceptance.json');
     return result.passed ? 0 : 1;
   }
-  return code;
+  return args[0] === '--prepare-model' ? preparationExitCode(code, context.directProcessesTerminated) : code;
 }
 
-module.exports = { runtimeEnvironment, validateArgs, main };
+module.exports = { runtimeEnvironment, validateArgs, parseAction, preparationExitCode, main };
 if (require.main === module) main().then(code => { process.exitCode = code; }).catch(error => {
   console.error(`ECC local: ${error.message}`); process.exitCode = 1;
 });
