@@ -40,6 +40,7 @@ class Operator:
             cwd=self.project,
             env=self.env,
             text=True,
+            encoding="utf-8",
             capture_output=True,
             timeout=15,
             check=True,
