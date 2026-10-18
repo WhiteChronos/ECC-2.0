@@ -5,17 +5,18 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
+const { prepareIsolatedBase } = require('./prepare-local-profile.cjs');
 
-function runtimeEnvironment(parent, directory, port) {
+function runtimeEnvironment(parent, directory, port, modelsDirectory = path.join(directory, 'models')) {
   const allowed = new Set(['systemroot', 'windir', 'path', 'temp', 'tmp', 'comspec', 'processor_architecture', 'number_of_processors']);
   const env = Object.fromEntries(Object.entries(parent).filter(([key]) => allowed.has(key.toLowerCase())));
   return { ...env, USERPROFILE: path.join(directory, 'runtime-home'), OLLAMA_HOST: `127.0.0.1:${port}`,
-    OLLAMA_MODELS: path.join(directory, 'models'), OLLAMA_NO_CLOUD: '1', OLLAMA_CONTEXT_LENGTH: '4096',
+    OLLAMA_MODELS: modelsDirectory, OLLAMA_NO_CLOUD: '1', OLLAMA_CONTEXT_LENGTH: '4096',
     OLLAMA_NUM_PARALLEL: '1', OLLAMA_KEEP_ALIVE: '5m', ECC_LOCAL_ONLY: '1', ECC_SKIP_LLM_SUMMARY: '1',
     PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
 }
 
-const LOCAL_MODELS = new Set(['qwen3:0.6b', 'qwen3:4b']);
+const LOCAL_MODELS = new Set(['qwen3:0.6b', 'qwen3:4b', 'ecc-qwen3-4b-local']);
 
 function parseAction(input) {
   if (input[0] === '--prepare-model') {
@@ -71,11 +72,14 @@ async function runRuntime(args, context) {
   const executable = path.join(directory, 'runtime', 'ollama.exe');
   const python = context.python || process.env.ECC_PYTHON || [path.join(root, '.venv', 'Scripts', 'python.exe'), path.join(codexRoot, 'ecc-validation-py', 'Scripts', 'python.exe')].find(file => fs.existsSync(file));
   if (!fs.existsSync(executable) || !python || !fs.existsSync(python)) throw new Error('Runtime ou Python ausente. Consulte docs/ECC-LOCAL.md.');
+  const modelsDirectory = action.model === 'ecc-qwen3-4b-local'
+    ? path.join(codexRoot, 'toolchains', 'ecc-qwen3-4b-profile', 'models') : path.join(directory, 'models');
+  if (action.prepare && action.model === 'ecc-qwen3-4b-local') prepareIsolatedBase(path.join(directory, 'models'), modelsDirectory);
   fs.mkdirSync(path.join(directory, 'runtime-home'), { recursive: true });
   const outputDir = path.join(root, '.local-runtime');
   fs.mkdirSync(outputDir, { recursive: true });
   const port = await availablePort();
-  const env = runtimeEnvironment(process.env, directory, port);
+  const env = runtimeEnvironment(process.env, directory, port, modelsDirectory);
   env.PYTHONPATH = path.join(root, 'src');
   const logFile = path.join(outputDir, 'ollama.log');
   const log = fs.openSync(logFile, 'w');
@@ -103,7 +107,10 @@ async function runRuntime(args, context) {
     const smoke = args[0] === '--smoke';
     const structured = !action.prepare && (smoke || args[0] === '--batch-json');
     const command = action.prepare ? executable : python;
-    const clientArgs = action.prepare ? ['pull', action.model] : ['-m', 'llm.cli.local', '--url', `http://127.0.0.1:${port}`, '--model', action.model, ...args];
+    const prepareArgs = action.model === 'ecc-qwen3-4b-local'
+      ? ['create', action.model, '-f', path.join(root, 'scripts', 'Qwen3-4B-Local.Modelfile')]
+      : ['pull', action.model];
+    const clientArgs = action.prepare ? prepareArgs : ['-m', 'llm.cli.local', '--url', `http://127.0.0.1:${port}`, '--model', action.model, ...args];
     client = spawn(command, clientArgs,
       { cwd: root, env, shell: false, windowsHide: true, stdio: structured ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
     clientClosed = new Promise(resolve => client.once('close', resolve));

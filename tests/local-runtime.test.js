@@ -17,9 +17,36 @@ test('model selection and preparation accept only explicit local allowlist', () 
   assert.deepEqual(runtime.parseAction(['--doctor', '--model', 'qwen3:4b']), {args:['--doctor'], model:'qwen3:4b', prepare:false});
   assert.deepEqual(runtime.parseAction(['--prepare-model', 'qwen3:4b']), {args:[], model:'qwen3:4b', prepare:true});
   assert.equal(runtime.parseAction(['--doctor']).model, 'qwen3:0.6b');
+  assert.equal(runtime.parseAction(['--prepare-model','ecc-qwen3-4b-local']).model,'ecc-qwen3-4b-local');
   for (const args of [['--model','remote:cloud'], ['--prepare-model','remote:cloud'], ['--doctor','--model','qwen3:4b','--model','qwen3:0.6b'], ['--prepare-model','qwen3:4b','extra']]) {
     assert.throws(() => runtime.parseAction(args));
   }
+});
+
+test('derived local model closes the thinking prefix before answer generation', () => {
+  const body=fs.readFileSync(path.join(__dirname,'../scripts/Qwen3-4B-Local.Modelfile'),'utf8');
+  assert.ok(body.startsWith('FROM qwen3:4b\n'));
+  assert.ok(body.includes('<think>\n\n</think>\n\n'));
+  assert.ok(!body.includes('user_id'));
+});
+
+test('isolated store copies verified layers and preserves divergent existing files', () => {
+  const {prepareIsolatedBase}=require('../scripts/prepare-local-profile.cjs');
+  const {createHash}=require('node:crypto');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ecc-profile-')),source=path.join(root,'source'),target=path.join(root,'target');
+  const content=Buffer.from('own test weights'),digest=createHash('sha256').update(content).digest('hex');
+  const relative='manifests/registry.ollama.ai/library/qwen3/4b';
+  fs.mkdirSync(path.join(source,'blobs'),{recursive:true});fs.mkdirSync(path.dirname(path.join(source,relative)),{recursive:true});
+  const layer={digest:'sha256:'+digest};
+  fs.writeFileSync(path.join(source,'blobs','sha256-'+digest),content);
+  fs.writeFileSync(path.join(source,relative),JSON.stringify({config:layer,layers:[layer]}));
+  prepareIsolatedBase(source,target);
+  const copied=path.join(target,'blobs','sha256-'+digest);
+  assert.deepEqual(fs.readFileSync(copied),content);
+  fs.writeFileSync(copied,'changed');
+  assert.throws(()=>prepareIsolatedBase(source,target),/divergiu/);
+  assert.equal(fs.readFileSync(copied,'utf8'),'changed');
+  assert.deepEqual(fs.readFileSync(path.join(source,'blobs','sha256-'+digest)),content);
 });
 
 test('batch JSON is an explicit local action with bounded input', () => {

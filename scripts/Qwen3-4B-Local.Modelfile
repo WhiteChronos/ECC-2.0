@@ -1,0 +1,14 @@
+FROM qwen3:4b
+# Local inference profile; original Qwen3 weights and Apache-2.0 license retained.
+# Single-turn text/JSON benchmark, without tools. No trained weights or expected answers.
+TEMPLATE """{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+<think>
+
+</think>
+
+"""
+PARAMETER num_ctx 4096
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
