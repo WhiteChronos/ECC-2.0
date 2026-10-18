@@ -4,6 +4,15 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
+test('batch JSON is an explicit local action with bounded input', () => {
+  const runtime = require('../scripts/local-runtime.cjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ecc-batch-input-'));
+  const file = path.join(root, 'batch.json');
+  fs.writeFileSync(file, JSON.stringify({schemaVersion: 1, runId: 'fixture', requests: [{requestId:'one',taskId:'fixture',mode:'baseline',prompt:'hello',repetition:0,expectedChecks:['exact:hello']}]}));
+  assert.deepEqual(runtime.validateArgs(['--batch-json', file]), ['--batch-json', file]);
+  assert.throws(() => runtime.validateArgs(['--batch-json', path.join(root, 'absent.json')]));
+});
+
 test('runtime environment disables cloud and excludes API keys and proxies', () => {
   const runtime = require('../scripts/local-runtime.cjs');
   const env = runtime.runtimeEnvironment({SystemRoot: 'C:\\Windows', PATH: 'safe', OPENAI_API_KEY: 'fixture-only', HTTPS_PROXY: 'http://external'}, 'C:/runtime', 12345);

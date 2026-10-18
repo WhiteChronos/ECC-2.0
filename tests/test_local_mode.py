@@ -84,6 +84,8 @@ def local_server():
                     result["remote_host"] = "https://ollama.com"
             else:
                 result = {"message": {"content": "local ok"}, "model": body["model"]}
+                if "usage_counts" in state:
+                    result.update(state["usage_counts"])
                 prompt = body.get("messages", [{}])[-1].get("content", "") if body.get("messages") else ""
                 if "17 + 25" in prompt:
                     result["message"]["content"] = json.dumps({"answer": 43 if state.get("wrong_answer") else 42}) if body.get("format") else "42"

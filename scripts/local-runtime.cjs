@@ -16,6 +16,20 @@ function runtimeEnvironment(parent, directory, port) {
 }
 
 function validateArgs(args) {
+  if (args.length === 2 && args[0] === '--batch-json') {
+    const stat = fs.lstatSync(args[1]);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024 * 1024) throw new Error('Arquivo de lote invalido.');
+    const data = JSON.parse(fs.readFileSync(args[1], 'utf8').replace(/^\uFEFF/, ''));
+    const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value);
+    const keys = (value, names) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === names.sort().join(',');
+    if (!keys(data,['schemaVersion','runId','requests']) || data.schemaVersion !== 1 || !id(data.runId) || !Array.isArray(data.requests) || data.requests.length < 1 || data.requests.length > 18) throw new Error('Schema de lote invalido.');
+    const seen = new Set();
+    for (const r of data.requests) {
+      if (!keys(r,['requestId','taskId','mode','prompt','repetition','expectedChecks']) || !id(r.requestId) || !id(r.taskId) || seen.has(r.requestId) || !['baseline','optimized'].includes(r.mode) || !Number.isInteger(r.repetition) || r.repetition < 0 || r.repetition > 2 || typeof r.prompt !== 'string' || !Buffer.byteLength(r.prompt) || Buffer.byteLength(r.prompt) > 16384 || !Array.isArray(r.expectedChecks) || !r.expectedChecks.length || r.expectedChecks.length > 100 || r.expectedChecks.some(c => typeof c !== 'string' || c.length > 4096 || !/^(exact|contains):.+/s.test(c))) throw new Error('Pedido de lote invalido.');
+      seen.add(r.requestId);
+    }
+    return args;
+  }
   if (!args.length) return [];
   if (args.length === 1 && ['--doctor', '--smoke'].includes(args[0])) return args;
   if (args.length === 2 && args[0] === '--prompt' && args[1].length <= 16384) return args;
@@ -68,13 +82,14 @@ async function runRuntime(args, context) {
     }
     if (!ready) throw new Error('Prazo excedido ao iniciar Ollama.');
     const smoke = args[0] === '--smoke';
+    const structured = smoke || args[0] === '--batch-json';
     client = spawn(python, ['-m', 'llm.cli.local', '--url', `http://127.0.0.1:${port}`, '--model', 'qwen3:0.6b', ...args],
-      { cwd: root, env, shell: false, windowsHide: true, stdio: smoke ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
+      { cwd: root, env, shell: false, windowsHide: true, stdio: structured ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
     clientClosed = new Promise(resolve => client.once('close', resolve));
     let output = '';
-    if (smoke) client.stdout.on('data', chunk => { output += chunk.toString('utf8'); if (output.length > 1024 * 1024) client.kill(); });
+    if (structured) client.stdout.on('data', chunk => { output += chunk.toString('utf8'); if (Buffer.byteLength(output) > 16 * 1024 * 1024) client.kill(); });
     const code = await new Promise((resolve, reject) => { client.once('error', reject); client.once('close', resolve); });
-    if (smoke) {
+    if (structured) {
       const result = JSON.parse(output);
       context.result = { ...result, runtimeOwnedByLauncher: true, cloudDisabled: true, allEccSurfacesVerified: false };
     }
@@ -100,11 +115,13 @@ function writeAtomic(file, value) {
 async function main(args = process.argv.slice(2), options = {}) {
   const context = { root: options.root || path.resolve(__dirname, '..'), ...options };
   const smoke = args[0] === '--smoke';
+  const batch = args[0] === '--batch-json';
+  const structured = smoke || batch;
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
   const outputDir = path.join(context.root, '.local-runtime');
-  const latest = path.join(outputDir, 'latest-acceptance.json');
-  if (smoke) {
+  const latest = path.join(outputDir, batch ? 'latest-batch.json' : 'latest-acceptance.json');
+  if (structured) {
     fs.mkdirSync(outputDir, { recursive: true });
     writeAtomic(latest, {runId, startedAt, state: 'running', passed: false, realInferenceVerified: false});
   }
@@ -114,18 +131,18 @@ async function main(args = process.argv.slice(2), options = {}) {
     context.result = {passed: false, realInferenceVerified: false, code: 'LOCAL_RUNTIME_FAILED', errorType: error.name};
     console.error(`ECC local: ${error.message}`);
   }
-  if (smoke) {
-    const result = {...context.result, runId, startedAt, checkedAt: new Date().toISOString(),
+  if (structured) {
+    const result = {...context.result, requestRunId: context.result?.runId ?? null, runId, startedAt, checkedAt: new Date().toISOString(),
       directProcessesTerminated: context.directProcessesTerminated ?? true,
       descendantsTerminationVerified: false,
       terminationScope: 'Somente processos diretos pertencentes ao iniciador; descendentes nao afirmados.',
       allEccSurfacesVerified: false};
     result.passed = code === 0 && result.passed === true && result.directProcessesTerminated;
     result.state = result.passed ? 'completed' : (result.directProcessesTerminated ? 'failed' : 'unknown');
-    writeAtomic(path.join(outputDir, `acceptance-${runId}.json`), result);
+    writeAtomic(path.join(outputDir, `${batch ? 'batch' : 'acceptance'}-${runId}.json`), result);
     writeAtomic(latest, result);
     console.log(JSON.stringify(result, null, 2));
-    console.log('Resultado salvo em .local-runtime/latest-acceptance.json');
+    if (!batch) console.log('Resultado salvo em .local-runtime/latest-acceptance.json');
     return result.passed ? 0 : 1;
   }
   return code;

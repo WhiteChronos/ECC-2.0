@@ -112,11 +112,21 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--doctor", action="store_true")
     action.add_argument("--smoke", action="store_true")
     action.add_argument("--prompt")
+    action.add_argument("--batch-json")
     args = parser.parse_args(argv)
     os.environ["ECC_LOCAL_ONLY"] = "1"
     os.environ["ECC_SKIP_LLM_SUMMARY"] = "1"
     try:
+        batch = None
+        if args.batch_json is not None:
+            from llm.cli.economy_batch import read_batch
+            batch = read_batch(args.batch_json)
         provider = OllamaProvider(base_url=local_base_url(args.url), default_model=args.model)
+        if batch is not None:
+            from llm.cli.economy_batch import run_batch
+            result = run_batch(provider, batch)
+            print(json.dumps(result, ensure_ascii=True, indent=2))
+            return 0 if result["passed"] else 1
         if args.doctor or args.smoke:
             result = smoke(provider) if args.smoke else doctor(provider)
             print(json.dumps(result, ensure_ascii=True, indent=2))

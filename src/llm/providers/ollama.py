@@ -232,6 +232,9 @@ class OllamaProvider(LLMProvider):
                 content=content,
                 tool_calls=tool_calls,
                 model=model,
+                usage={"input_tokens": result["prompt_eval_count"], "output_tokens": result["eval_count"]}
+                if all(type(result.get(key)) is int and result[key] >= 0 for key in ("prompt_eval_count", "eval_count"))
+                else None,
                 stop_reason=result.get("done_reason"),
             )
         except Exception as e:
