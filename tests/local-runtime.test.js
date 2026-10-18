@@ -28,6 +28,11 @@ test('batch JSON is an explicit local action with bounded input', () => {
   const file = path.join(root, 'batch.json');
   fs.writeFileSync(file, JSON.stringify({schemaVersion: 1, runId: 'fixture', requests: [{requestId:'one',taskId:'fixture',mode:'baseline',prompt:'hello',repetition:0,expectedChecks:['exact:hello']}]}));
   assert.deepEqual(runtime.validateArgs(['--batch-json', file]), ['--batch-json', file]);
+  const data=JSON.parse(fs.readFileSync(file));
+  fs.writeFileSync(file,JSON.stringify({...data,responseFormat:'json-string'}));
+  assert.deepEqual(runtime.validateArgs(['--batch-json',file]),['--batch-json',file]);
+  fs.writeFileSync(file,JSON.stringify({...data,responseFormat:'bad'}));
+  assert.throws(() => runtime.validateArgs(['--batch-json',file]));
   assert.throws(() => runtime.validateArgs(['--batch-json', path.join(root, 'absent.json')]));
 });
 

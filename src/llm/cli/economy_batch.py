@@ -6,8 +6,9 @@ import time
 from llm.core.types import LLMInput, Message, Role
 
 def validate_batch(value: dict) -> dict:
-    if not isinstance(value,dict) or set(value)!={"schemaVersion","runId","requests"} or type(value["schemaVersion"]) is not int or value["schemaVersion"]!=1:
+    if not isinstance(value,dict) or set(value) not in ({"schemaVersion","runId","requests"},{"schemaVersion","runId","requests","responseFormat"}) or type(value["schemaVersion"]) is not int or value["schemaVersion"]!=1:
         raise ValueError("Schema de lote invalido.")
+    if 'responseFormat' in value and value['responseFormat']!='json-string':raise ValueError('Formato de resposta invalido.')
     if not isinstance(value["runId"],str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",value["runId"]):raise ValueError("runId invalido.")
     requests=value["requests"]
     if not isinstance(requests,list) or not 1<=len(requests)<=18:raise ValueError("Lote deve conter entre 1 e 18 pedidos.")
@@ -32,14 +33,23 @@ def read_batch(file: str) -> dict:
 def run_batch(provider,batch: dict) -> dict:
     validate_batch(batch)
     results=[]
+    structured=batch.get('responseFormat')=='json-string'
     for r in batch["requests"]:
         started=time.perf_counter()
         try:
-            output=provider.generate(LLMInput(messages=[Message(Role.USER,r["prompt"])],temperature=0,max_tokens=256,metadata={"think":False}))
+            metadata={'think':False,**({'format':{'type':'string'}} if structured else {})}
+            output=provider.generate(LLMInput(messages=[Message(Role.USER,r["prompt"])],temperature=0,max_tokens=256,metadata=metadata))
             if not output.content.strip() or len(output.content.encode("utf-8"))>65536:raise ValueError("Resposta vazia ou excessiva.")
-            checks=[output.content.strip()==c[6:] if c.startswith("exact:") else c[9:] in output.content for c in r["expectedChecks"]]
-            results.append({k:r[k] for k in ("requestId","taskId","mode","repetition")}|{"content":output.content,"model":output.model,"usage":output.usage,"duration":time.perf_counter()-started,"qualityPassed":all(checks),"status":"completed","failureCode":None})
+            content=output.content;wire_valid=True
+            if structured:
+                try:
+                    decoded=json.loads(output.content)
+                    wire_valid=isinstance(decoded,str) and bool(decoded.strip())
+                    content=decoded if wire_valid else ''
+                except (ValueError,TypeError):content='';wire_valid=False
+            checks=[content.strip()==c[6:] if c.startswith("exact:") else c[9:] in content for c in r["expectedChecks"]]
+            results.append({k:r[k] for k in ("requestId","taskId","mode","repetition")}|{"content":content,**({'rawContent':output.content} if structured else {}),"model":output.model,"usage":output.usage,"duration":time.perf_counter()-started,"qualityPassed":wire_valid and output.stop_reason!='length' and all(checks),"status":"completed","failureCode":None if wire_valid else 'INVALID_JSON_STRING'})
         except Exception as exc:
             results.append({k:r[k] for k in ("requestId","taskId","mode","repetition")}|{"content":"","model":provider.default_model,"usage":None,"duration":time.perf_counter()-started,"qualityPassed":False,"status":"failed","failureCode":type(exc).__name__})
             break
-    return {"schemaVersion":1,"runId":batch["runId"],"requests":results,"passed":len(results)==len(batch["requests"]) and all(r["qualityPassed"] for r in results),"realInferenceVerified":bool(results) and all(r["status"]=="completed" for r in results),"parameters":{"temperature":0,"think":False,"max_tokens":256},"paidProviderFallback":False,"scope":"Real local responses only; no Codex billing attribution."}
+    return {"schemaVersion":1,"runId":batch["runId"],**({'responseFormat':'json-string'} if structured else {}),"requests":results,"passed":len(results)==len(batch["requests"]) and all(r["qualityPassed"] for r in results),"realInferenceVerified":bool(results) and all(r["status"]=="completed" for r in results),"parameters":{"temperature":0,"think":False,"max_tokens":256},"paidProviderFallback":False,"scope":"Real local responses only; no Codex billing attribution."}
