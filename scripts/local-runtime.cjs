@@ -16,7 +16,7 @@ function runtimeEnvironment(parent, directory, port, modelsDirectory = path.join
     PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' };
 }
 
-const LOCAL_MODELS = new Set(['qwen3:0.6b', 'qwen3:4b', 'ecc-qwen3-4b-local']);
+const LOCAL_MODELS = new Set(['qwen3:0.6b', 'qwen3:4b', 'ecc-qwen3-4b-local', 'qwen3:4b-instruct-2507-q4_K_M']);
 
 function parseAction(input) {
   if (input[0] === '--prepare-model') {

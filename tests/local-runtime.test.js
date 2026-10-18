@@ -18,6 +18,7 @@ test('model selection and preparation accept only explicit local allowlist', () 
   assert.deepEqual(runtime.parseAction(['--prepare-model', 'qwen3:4b']), {args:[], model:'qwen3:4b', prepare:true});
   assert.equal(runtime.parseAction(['--doctor']).model, 'qwen3:0.6b');
   assert.equal(runtime.parseAction(['--prepare-model','ecc-qwen3-4b-local']).model,'ecc-qwen3-4b-local');
+  assert.equal(runtime.parseAction(['--prepare-model','qwen3:4b-instruct-2507-q4_K_M']).model,'qwen3:4b-instruct-2507-q4_K_M');
   for (const args of [['--model','remote:cloud'], ['--prepare-model','remote:cloud'], ['--doctor','--model','qwen3:4b','--model','qwen3:0.6b'], ['--prepare-model','qwen3:4b','extra']]) {
     assert.throws(() => runtime.parseAction(args));
   }
